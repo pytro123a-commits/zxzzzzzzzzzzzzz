@@ -1,6 +1,6 @@
---[[ 
-    ESP Drawing - Exunys Style
-    Stable / No drag / UI compatible
+--[[
+    ESP V2
+    Stateless / Anti-drag / UI-safe
 ]]
 
 local Players = game:GetService("Players")
@@ -10,35 +10,55 @@ local LocalPlayer = Players.LocalPlayer
 
 local esp = {}
 
--- ================= CONFIG =================
+-- ===== CONFIG =====
 esp.enabled = true
-esp.teamcheck = false
-esp.outlines = true
-esp.shortnames = true
+esp.showBox = true
+esp.showName = true
+esp.showDistance = true
+esp.showWeapon = true
+esp.showHealth = true
+esp.shortNames = true
+esp.color = Color3.fromRGB(255,255,255)
+-- ==================
 
-esp.team_boxes   = {true, Color3.fromRGB(255,255,255), Color3.fromRGB(0,0,0)}
-esp.team_names   = {true, Color3.fromRGB(255,255,255)}
-esp.team_weapon  = {true, Color3.fromRGB(255,255,255)}
-esp.team_distance = true
-esp.team_health   = true
--- ==========================================
+-- cache só de objetos, NÃO de estado
+local objects = {}
 
-local cache = {}
-
--- ================= UTILS =================
-local function safe(o)
-    return typeof(o) == "userdata" and o.Remove
+-- ===== UTILS =====
+local function newSquare()
+    local s = Drawing.new("Square")
+    s.Filled = false
+    s.Thickness = 1
+    s.Visible = false
+    return s
 end
 
-local function hide(d)
-    for _,v in pairs(d) do
-        if safe(v) then
-            v.Visible = false
+local function newText(size)
+    local t = Drawing.new("Text")
+    t.Center = true
+    t.Outline = true
+    t.Size = size
+    t.Visible = false
+    return t
+end
+
+local function newLine()
+    local l = Drawing.new("Line")
+    l.Thickness = 2
+    l.Visible = false
+    return l
+end
+
+local function destroySet(set)
+    if not set then return end
+    for _,v in pairs(set) do
+        if typeof(v) == "userdata" and v.Remove then
+            v:Remove()
         end
     end
 end
 
-local function isOnScreen(pos)
+local function onScreen(pos)
     local vp = Camera.ViewportSize
     return pos.Z > 0
        and pos.X >= 0 and pos.X <= vp.X
@@ -47,158 +67,107 @@ end
 
 local function getTool(char)
     for _,v in ipairs(char:GetChildren()) do
-        if v:IsA("Tool") then
-            return v.Name
-        end
+        if v:IsA("Tool") then return v.Name end
     end
     return ""
 end
+-- ==================
 
-local function valid(plr)
-    if not esp.teamcheck then return true end
-    if not LocalPlayer.Team then return true end
-    return plr.Team ~= LocalPlayer.Team
-end
--- ==========================================
-
--- ================= DRAWINGS =================
-local function create(plr)
-    local d = {}
-
-    d.box = Drawing.new("Square")
-    d.box.Filled = false
-    d.box.Thickness = 1
-
-    d.outline = Drawing.new("Square")
-    d.outline.Filled = false
-    d.outline.Thickness = 3
-
-    d.name = Drawing.new("Text")
-    d.name.Center = true
-    d.name.Size = 13
-    d.name.Outline = true
-
-    d.distance = Drawing.new("Text")
-    d.distance.Center = true
-    d.distance.Size = 12
-    d.distance.Outline = true
-
-    d.weapon = Drawing.new("Text")
-    d.weapon.Size = 12
-    d.weapon.Outline = true
-
-    d.health = Drawing.new("Line")
-    d.health.Thickness = 2
-
-    hide(d)
-    cache[plr] = d
-end
-
-local function clear(plr)
-    local d = cache[plr]
-    if not d then return end
-
-    for _,v in pairs(d) do
-        if safe(v) then v:Remove() end
-    end
-
-    cache[plr] = nil
-end
--- ============================================
-
--- ================= MAIN LOOP =================
+-- ===== MAIN LOOP =====
 RunService.RenderStepped:Connect(function()
     if not esp.enabled then
-        for _,d in pairs(cache) do hide(d) end
+        for _,set in pairs(objects) do
+            for _,v in pairs(set) do v.Visible = false end
+        end
         return
     end
 
     for _,plr in ipairs(Players:GetPlayers()) do
         if plr == LocalPlayer then continue end
-        if not valid(plr) then continue end
 
-        if not cache[plr] then
-            create(plr)
-        end
-
-        local d = cache[plr]
         local char = plr.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChildOfClass("Humanoid")
 
+        -- SEM CHAR = DESTROI
         if not char or not hrp or not hum or hum.Health <= 0 then
-            hide(d)
+            destroySet(objects[plr])
+            objects[plr] = nil
             continue
         end
 
         local pos, on = Camera:WorldToViewportPoint(hrp.Position)
-        if not on or not isOnScreen(pos) then
-            hide(d)
+        if not on or not onScreen(pos) then
+            destroySet(objects[plr])
+            objects[plr] = nil
             continue
         end
 
+        -- CRIA SOMENTE QUANDO NECESSÁRIO
+        if not objects[plr] then
+            objects[plr] = {
+                box = newSquare(),
+                name = newText(13),
+                distance = newText(12),
+                weapon = newText(12),
+                health = newLine()
+            }
+        end
+
+        local d = objects[plr]
+
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
-        local scale = math.clamp(1800 / dist, 6, 300)
-        local size = Vector2.new(scale / 2, scale)
+        local scale = math.clamp(1800 / dist, 8, 300)
+        local w, h = scale/2, scale
+        local topY = pos.Y - h/2
+        local bottomY = pos.Y + h/2
 
         -- BOX
-        if esp.team_boxes[1] then
-            d.box.Size = size
-            d.box.Position = Vector2.new(pos.X - size.X/2, pos.Y - size.Y/2)
-            d.box.Color = esp.team_boxes[2]
+        if esp.showBox then
+            d.box.Size = Vector2.new(w, h)
+            d.box.Position = Vector2.new(pos.X - w/2, topY)
+            d.box.Color = esp.color
             d.box.Visible = true
-
-            if esp.outlines then
-                d.outline.Size = size + Vector2.new(2,2)
-                d.outline.Position = d.box.Position - Vector2.new(1,1)
-                d.outline.Color = esp.team_boxes[3]
-                d.outline.Visible = true
-            else
-                d.outline.Visible = false
-            end
         else
             d.box.Visible = false
-            d.outline.Visible = false
         end
 
         -- NAME
-        if esp.team_names[1] then
-            d.name.Text = esp.shortnames and plr.Name:sub(1,12) or plr.Name
-            d.name.Position = Vector2.new(pos.X, d.box.Position.Y - 14)
-            d.name.Color = esp.team_names[2]
+        if esp.showName then
+            d.name.Text = esp.shortNames and plr.Name:sub(1,12) or plr.Name
+            d.name.Position = Vector2.new(pos.X, topY - 14)
+            d.name.Color = esp.color
             d.name.Visible = true
         else
             d.name.Visible = false
         end
 
         -- DISTANCE
-        if esp.team_distance then
+        if esp.showDistance then
             d.distance.Text = ("[%dm]"):format(dist)
-            d.distance.Position = Vector2.new(pos.X, d.box.Position.Y + size.Y + 2)
-            d.distance.Color = esp.team_boxes[2]
+            d.distance.Position = Vector2.new(pos.X, bottomY + 2)
+            d.distance.Color = esp.color
             d.distance.Visible = true
         else
             d.distance.Visible = false
         end
 
         -- WEAPON
-        if esp.team_weapon[1] then
+        if esp.showWeapon then
             local tool = getTool(char)
             d.weapon.Text = tool
-            d.weapon.Position = Vector2.new(d.box.Position.X + size.X + 6, pos.Y)
-            d.weapon.Color = esp.team_weapon[2]
+            d.weapon.Position = Vector2.new(pos.X + w/2 + 6, pos.Y)
+            d.weapon.Color = esp.color
             d.weapon.Visible = tool ~= ""
         else
             d.weapon.Visible = false
         end
 
         -- HEALTH
-        if esp.team_health then
+        if esp.showHealth then
             local hp = hum.Health / hum.MaxHealth
-            local y1 = d.box.Position.Y + size.Y
-            local y2 = y1 - size.Y * hp
-            d.health.From = Vector2.new(d.box.Position.X - 4, y1)
-            d.health.To   = Vector2.new(d.box.Position.X - 4, y2)
+            d.health.From = Vector2.new(pos.X - w/2 - 4, bottomY)
+            d.health.To   = Vector2.new(pos.X - w/2 - 4, bottomY - h * hp)
             d.health.Color = Color3.fromRGB(255 - 255*hp, 255*hp, 0)
             d.health.Visible = true
         else
@@ -206,8 +175,11 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
--- ============================================
+-- ======================
 
-Players.PlayerRemoving:Connect(clear)
+Players.PlayerRemoving:Connect(function(plr)
+    destroySet(objects[plr])
+    objects[plr] = nil
+end)
 
 return esp
