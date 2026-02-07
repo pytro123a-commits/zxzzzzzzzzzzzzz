@@ -1,4 +1,4 @@
--- Clean Highlight ESP (Advanced Legit)
+-- Clean Highlight ESP (Advanced Legit + Outline Control)
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -12,11 +12,14 @@ ESP.Enabled = true
 ESP.TeamCheck = true
 
 ESP.ChamsEnabled = true
+ESP.OutlineEnabled = true
+
 ESP.ToolESPEnabled = true
 ESP.HealthESPEnabled = true
 ESP.DistanceESPEnabled = true
 
 ESP.DefaultColor = Color3.fromRGB(255,255,255)
+ESP.OutlineColor = Color3.fromRGB(255,255,255)
 ESP.Transparency = 0.9
 
 -- ================= UTILS =================
@@ -26,6 +29,13 @@ local function getTeamColor(player)
         return player.Team.TeamColor.Color
     end
     return ESP.DefaultColor
+end
+
+local function getOutlineColor(player)
+    if ESP.TeamCheck then
+        return getTeamColor(player)
+    end
+    return ESP.OutlineColor
 end
 
 local function getEquippedTool(char)
@@ -60,19 +70,21 @@ local function create(player)
     if player.Character:FindFirstChild("ESP_HL") then return end
 
     local color = getTeamColor(player)
+    local outlineColor = getOutlineColor(player)
 
-    -- Highlight (Chams)
     local hl = Instance.new("Highlight")
     hl.Name = "ESP_HL"
     hl.Adornee = player.Character
+
     hl.FillColor = color
-    hl.OutlineColor = color
+    hl.OutlineColor = outlineColor
+
     hl.FillTransparency = ESP.ChamsEnabled and ESP.Transparency or 1
-    hl.OutlineTransparency = 0
+    hl.OutlineTransparency = ESP.OutlineEnabled and 0 or 1
+
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent = player.Character
 
-    -- Tag
     local head = player.Character:FindFirstChild("Head")
     if head then
         local gui = Instance.new("BillboardGui")
@@ -109,17 +121,17 @@ local function update(player)
     if not hum or not root or not head then return end
 
     local color = getTeamColor(player)
+    local outlineColor = getOutlineColor(player)
 
-    -- Update Highlight
     local hl = char:FindFirstChild("ESP_HL")
     if hl then
         hl.FillColor = color
-        hl.OutlineColor = color
+        hl.OutlineColor = outlineColor
         hl.FillTransparency = ESP.ChamsEnabled and ESP.Transparency or 1
+        hl.OutlineTransparency = ESP.OutlineEnabled and 0 or 1
         hl.Enabled = hum.Health > 0
     end
 
-    -- Update Tag
     local tag = head:FindFirstChild("ESP_Tag")
     if tag then
         local label = tag:FindFirstChildOfClass("TextLabel")
@@ -185,35 +197,14 @@ end)
 
 -- ================= API =================
 
-function ESP.SetEnabled(v)
-    ESP.Enabled = v
-    for _,p in ipairs(Players:GetPlayers()) do
-        if v then create(p) else clear(p) end
-    end
-end
-
-function ESP.SetTeamCheck(v)
-    ESP.TeamCheck = v
-end
-
-function ESP.SetChams(v)
-    ESP.ChamsEnabled = v
-end
-
-function ESP.SetToolESP(v)
-    ESP.ToolESPEnabled = v
-end
-
-function ESP.SetHealthESP(v)
-    ESP.HealthESPEnabled = v
-end
-
-function ESP.SetDistanceESP(v)
-    ESP.DistanceESPEnabled = v
-end
-
-function ESP.SetTransparency(v)
-    ESP.Transparency = v
-end
+function ESP.SetEnabled(v) ESP.Enabled = v end
+function ESP.SetTeamCheck(v) ESP.TeamCheck = v end
+function ESP.SetChams(v) ESP.ChamsEnabled = v end
+function ESP.SetOutline(v) ESP.OutlineEnabled = v end
+function ESP.SetToolESP(v) ESP.ToolESPEnabled = v end
+function ESP.SetHealthESP(v) ESP.HealthESPEnabled = v end
+function ESP.SetDistanceESP(v) ESP.DistanceESPEnabled = v end
+function ESP.SetTransparency(v) ESP.Transparency = v end
+function ESP.SetOutlineColor(c) ESP.OutlineColor = c end
 
 return ESP
