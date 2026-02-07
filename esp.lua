@@ -1,16 +1,32 @@
--- Clean Highlight ESP (Legit Style + Tool)
+-- Clean Highlight ESP (Advanced Legit)
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
 local ESP = {}
 
+-- ================= SETTINGS =================
+
 ESP.Enabled = true
-ESP.Color = Color3.fromRGB(255, 255, 255)
-ESP.OutlineColor = Color3.fromRGB(255, 255, 255)
+
+ESP.TeamCheck = true
+
+ESP.ChamsEnabled = true
+ESP.ToolESPEnabled = true
+ESP.HealthESPEnabled = true
+ESP.DistanceESPEnabled = true
+
+ESP.DefaultColor = Color3.fromRGB(255,255,255)
 ESP.Transparency = 0.9
 
 -- ================= UTILS =================
+
+local function getTeamColor(player)
+    if ESP.TeamCheck and player.Team and player.Team.TeamColor then
+        return player.Team.TeamColor.Color
+    end
+    return ESP.DefaultColor
+end
 
 local function getEquippedTool(char)
     for _,v in ipairs(char:GetChildren()) do
@@ -23,7 +39,6 @@ end
 
 local function clear(player)
     if not player.Character then return end
-
     local char = player.Character
 
     local hl = char:FindFirstChild("ESP_HL")
@@ -44,36 +59,37 @@ local function create(player)
     if not player.Character then return end
     if player.Character:FindFirstChild("ESP_HL") then return end
 
-    -- Highlight
+    local color = getTeamColor(player)
+
+    -- Highlight (Chams)
     local hl = Instance.new("Highlight")
     hl.Name = "ESP_HL"
     hl.Adornee = player.Character
-    hl.FillColor = ESP.Color
-    hl.OutlineColor = ESP.OutlineColor
-    hl.FillTransparency = ESP.Transparency
+    hl.FillColor = color
+    hl.OutlineColor = color
+    hl.FillTransparency = ESP.ChamsEnabled and ESP.Transparency or 1
     hl.OutlineTransparency = 0
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent = player.Character
 
-    -- NameTag
+    -- Tag
     local head = player.Character:FindFirstChild("Head")
-    if head and not head:FindFirstChild("ESP_Tag") then
+    if head then
         local gui = Instance.new("BillboardGui")
         gui.Name = "ESP_Tag"
         gui.Adornee = head
-        gui.Size = UDim2.fromOffset(140, 32) -- um pouco mais alto pra tool
-        gui.StudsOffset = Vector3.new(0, 2.4, 0)
+        gui.Size = UDim2.fromOffset(160, 22)
+        gui.StudsOffset = Vector3.new(0, 2.5, 0)
         gui.AlwaysOnTop = true
         gui.Parent = head
 
         local label = Instance.new("TextLabel")
-        label.Size = UDim2.fromScale(1, 1)
+        label.Size = UDim2.fromScale(1,1)
         label.BackgroundTransparency = 1
-        label.TextWrapped = true
         label.TextScaled = true
         label.Font = Enum.Font.Gotham
         label.TextStrokeTransparency = 0.85
-        label.TextColor3 = ESP.Color
+        label.TextColor3 = color
         label.Text = ""
         label.Parent = gui
     end
@@ -87,39 +103,50 @@ local function update(player)
     if not player.Character then return end
 
     local char = player.Character
-    local root = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
     local head = char:FindFirstChild("Head")
-    if not root or not hum or not head then return end
+    if not hum or not root or not head then return end
 
+    local color = getTeamColor(player)
+
+    -- Update Highlight
+    local hl = char:FindFirstChild("ESP_HL")
+    if hl then
+        hl.FillColor = color
+        hl.OutlineColor = color
+        hl.FillTransparency = ESP.ChamsEnabled and ESP.Transparency or 1
+        hl.Enabled = hum.Health > 0
+    end
+
+    -- Update Tag
     local tag = head:FindFirstChild("ESP_Tag")
     if tag then
         local label = tag:FindFirstChildOfClass("TextLabel")
-        if label and LocalPlayer.Character and LocalPlayer.Character.PrimaryPart then
-            local dist = (LocalPlayer.Character.PrimaryPart.Position - root.Position).Magnitude
-            local tool = getEquippedTool(char)
+        if label then
+            local parts = {}
 
-            if tool then
-                label.Text = string.format(
-                    "%s [%dm]\n%s",
-                    player.Name,
-                    math.floor(dist),
-                    tool
-                )
-            else
-                label.Text = string.format(
-                    "%s [%dm]",
-                    player.Name,
-                    math.floor(dist)
-                )
+            table.insert(parts, player.Name)
+
+            if ESP.HealthESPEnabled then
+                table.insert(parts, string.format("%d%%", (hum.Health / hum.MaxHealth) * 100))
             end
-        end
-    end
 
-    local hl = char:FindFirstChild("ESP_HL")
-    if hl then
-        hl.Enabled = hum.Health > 0
-        hl.FillColor = ESP.Color
+            if ESP.DistanceESPEnabled and LocalPlayer.Character and LocalPlayer.Character.PrimaryPart then
+                local dist = (LocalPlayer.Character.PrimaryPart.Position - root.Position).Magnitude
+                table.insert(parts, string.format("%dm", dist))
+            end
+
+            if ESP.ToolESPEnabled then
+                local tool = getEquippedTool(char)
+                if tool then
+                    table.insert(parts, "[" .. tool .. "]")
+                end
+            end
+
+            label.Text = table.concat(parts, " | ")
+            label.TextColor3 = color
+        end
     end
 end
 
@@ -129,7 +156,7 @@ local function setup(player)
     if player == LocalPlayer then return end
 
     player.CharacterAdded:Connect(function()
-        task.wait(0.1)
+        task.wait(0.15)
         create(player)
     end)
 
@@ -161,25 +188,32 @@ end)
 function ESP.SetEnabled(v)
     ESP.Enabled = v
     for _,p in ipairs(Players:GetPlayers()) do
-        if v then
-            create(p)
-        else
-            clear(p)
-        end
+        if v then create(p) else clear(p) end
     end
 end
 
-function ESP.SetColor(c)
-    ESP.Color = c
+function ESP.SetTeamCheck(v)
+    ESP.TeamCheck = v
+end
+
+function ESP.SetChams(v)
+    ESP.ChamsEnabled = v
+end
+
+function ESP.SetToolESP(v)
+    ESP.ToolESPEnabled = v
+end
+
+function ESP.SetHealthESP(v)
+    ESP.HealthESPEnabled = v
+end
+
+function ESP.SetDistanceESP(v)
+    ESP.DistanceESPEnabled = v
 end
 
 function ESP.SetTransparency(v)
     ESP.Transparency = v
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p.Character and p.Character:FindFirstChild("ESP_HL") then
-            p.Character.ESP_HL.FillTransparency = v
-        end
-    end
 end
 
 return ESP
