@@ -1,185 +1,134 @@
 --[[
-    ESP V2
-    Stateless / Anti-drag / UI-safe
+    ESP V3
+    Highlight + BillboardGui
+    Ultra stable / No drag possible
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 local esp = {}
 
 -- ===== CONFIG =====
 esp.enabled = true
-esp.showBox = true
+esp.showHighlight = true
 esp.showName = true
 esp.showDistance = true
-esp.showWeapon = true
-esp.showHealth = true
-esp.shortNames = true
-esp.color = Color3.fromRGB(255,255,255)
+esp.teamcheck = false
+
+esp.fillColor = Color3.fromRGB(255, 0, 0)
+esp.outlineColor = Color3.fromRGB(255, 255, 255)
+esp.fillTransparency = 0.5
+esp.outlineTransparency = 0
 -- ==================
 
--- cache só de objetos, NÃO de estado
 local objects = {}
 
 -- ===== UTILS =====
-local function newSquare()
-    local s = Drawing.new("Square")
-    s.Filled = false
-    s.Thickness = 1
-    s.Visible = false
-    return s
+local function valid(plr)
+    if not esp.teamcheck then return true end
+    if not LocalPlayer.Team then return true end
+    return plr.Team ~= LocalPlayer.Team
 end
 
-local function newText(size)
-    local t = Drawing.new("Text")
-    t.Center = true
-    t.Outline = true
-    t.Size = size
-    t.Visible = false
-    return t
-end
+local function cleanup(plr)
+    local obj = objects[plr]
+    if not obj then return end
 
-local function newLine()
-    local l = Drawing.new("Line")
-    l.Thickness = 2
-    l.Visible = false
-    return l
-end
+    if obj.highlight then obj.highlight:Destroy() end
+    if obj.gui then obj.gui:Destroy() end
 
-local function destroySet(set)
-    if not set then return end
-    for _,v in pairs(set) do
-        if typeof(v) == "userdata" and v.Remove then
-            v:Remove()
-        end
-    end
-end
-
-local function onScreen(pos)
-    local vp = Camera.ViewportSize
-    return pos.Z > 0
-       and pos.X >= 0 and pos.X <= vp.X
-       and pos.Y >= 0 and pos.Y <= vp.Y
-end
-
-local function getTool(char)
-    for _,v in ipairs(char:GetChildren()) do
-        if v:IsA("Tool") then return v.Name end
-    end
-    return ""
+    objects[plr] = nil
 end
 -- ==================
 
--- ===== MAIN LOOP =====
-RunService.RenderStepped:Connect(function()
-    if not esp.enabled then
-        for _,set in pairs(objects) do
-            for _,v in pairs(set) do v.Visible = false end
-        end
-        return
+-- ===== CREATE =====
+local function create(plr, char)
+    cleanup(plr)
+
+    local highlight
+    if esp.showHighlight then
+        highlight = Instance.new("Highlight")
+        highlight.Adornee = char
+        highlight.FillColor = esp.fillColor
+        highlight.OutlineColor = esp.outlineColor
+        highlight.FillTransparency = esp.fillTransparency
+        highlight.OutlineTransparency = esp.outlineTransparency
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = char
     end
 
+    local gui
+    if esp.showName or esp.showDistance then
+        gui = Instance.new("BillboardGui")
+        gui.Size = UDim2.fromOffset(200, 50)
+        gui.StudsOffset = Vector3.new(0, 3, 0)
+        gui.AlwaysOnTop = true
+        gui.Adornee = char:WaitForChild("Head", 2)
+        gui.Parent = char
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.fromScale(1, 1)
+        label.BackgroundTransparency = 1
+        label.TextScaled = true
+        label.Font = Enum.Font.SourceSansBold
+        label.TextColor3 = Color3.new(1,1,1)
+        label.TextStrokeTransparency = 0
+        label.Parent = gui
+
+        gui._label = label
+    end
+
+    objects[plr] = {
+        highlight = highlight,
+        gui = gui
+    }
+end
+-- ==================
+
+-- ===== UPDATE =====
+RunService.RenderStepped:Connect(function()
     for _,plr in ipairs(Players:GetPlayers()) do
         if plr == LocalPlayer then continue end
+        if not valid(plr) then
+            cleanup(plr)
+            continue
+        end
 
         local char = plr.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
 
-        -- SEM CHAR = DESTROI
-        if not char or not hrp or not hum or hum.Health <= 0 then
-            destroySet(objects[plr])
-            objects[plr] = nil
+        if not esp.enabled or not char or not hum or hum.Health <= 0 then
+            cleanup(plr)
             continue
         end
 
-        local pos, on = Camera:WorldToViewportPoint(hrp.Position)
-        if not on or not onScreen(pos) then
-            destroySet(objects[plr])
-            objects[plr] = nil
-            continue
-        end
-
-        -- CRIA SOMENTE QUANDO NECESSÁRIO
         if not objects[plr] then
-            objects[plr] = {
-                box = newSquare(),
-                name = newText(13),
-                distance = newText(12),
-                weapon = newText(12),
-                health = newLine()
-            }
+            create(plr, char)
         end
 
-        local d = objects[plr]
+        local obj = objects[plr]
 
-        local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
-        local scale = math.clamp(1800 / dist, 8, 300)
-        local w, h = scale/2, scale
-        local topY = pos.Y - h/2
-        local bottomY = pos.Y + h/2
+        -- UPDATE TEXTO
+        if obj.gui and obj.gui:FindFirstChild("_label") then
+            local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
+            local txt = ""
 
-        -- BOX
-        if esp.showBox then
-            d.box.Size = Vector2.new(w, h)
-            d.box.Position = Vector2.new(pos.X - w/2, topY)
-            d.box.Color = esp.color
-            d.box.Visible = true
-        else
-            d.box.Visible = false
-        end
+            if esp.showName then
+                txt = plr.Name
+            end
+            if esp.showDistance then
+                txt = txt .. string.format(" [%dm]", dist)
+            end
 
-        -- NAME
-        if esp.showName then
-            d.name.Text = esp.shortNames and plr.Name:sub(1,12) or plr.Name
-            d.name.Position = Vector2.new(pos.X, topY - 14)
-            d.name.Color = esp.color
-            d.name.Visible = true
-        else
-            d.name.Visible = false
-        end
-
-        -- DISTANCE
-        if esp.showDistance then
-            d.distance.Text = ("[%dm]"):format(dist)
-            d.distance.Position = Vector2.new(pos.X, bottomY + 2)
-            d.distance.Color = esp.color
-            d.distance.Visible = true
-        else
-            d.distance.Visible = false
-        end
-
-        -- WEAPON
-        if esp.showWeapon then
-            local tool = getTool(char)
-            d.weapon.Text = tool
-            d.weapon.Position = Vector2.new(pos.X + w/2 + 6, pos.Y)
-            d.weapon.Color = esp.color
-            d.weapon.Visible = tool ~= ""
-        else
-            d.weapon.Visible = false
-        end
-
-        -- HEALTH
-        if esp.showHealth then
-            local hp = hum.Health / hum.MaxHealth
-            d.health.From = Vector2.new(pos.X - w/2 - 4, bottomY)
-            d.health.To   = Vector2.new(pos.X - w/2 - 4, bottomY - h * hp)
-            d.health.Color = Color3.fromRGB(255 - 255*hp, 255*hp, 0)
-            d.health.Visible = true
-        else
-            d.health.Visible = false
+            obj.gui._label.Text = txt
         end
     end
 end)
--- ======================
 
-Players.PlayerRemoving:Connect(function(plr)
-    destroySet(objects[plr])
-    objects[plr] = nil
-end)
+Players.PlayerRemoving:Connect(cleanup)
 
 return esp
